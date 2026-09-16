@@ -173,11 +173,11 @@ The Sequencer uses two primary methods to send batches to the parent chain, depe
   - **Cost evaluation**: The Sequencer dynamically assesses whether using calldata is more cost-effective than blobs based on current gas prices and blob fees.
   - **Compatibility**: If the parent chain does not support EIP-4844, this method is the default and only option for batch posting.
 
-:::note
+<VanillaAdmonition type="note">
 
 The Sequencer continuously monitors network conditions to select the most cost-effective batch posting method, ensuring optimal operation under varying conditions.
 
-:::
+</VanillaAdmonition>
 
 ### Authority and finality
 
