@@ -1,0 +1,13 @@
+# Mechanical dialect transforms from the Docusaurus -> Fumadocs migration.
+# Each rewrote form, never substance; blame should credit the line before them.
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# T1  frontmatter remapped to the Fumadocs Zod schema
+874d310617f932c2e180d876269903fc5655dc2e
+# T2  internal links rewritten to /docs URLs
+baa6c8598ab0434d6d36e132ee2084f142ab9712
+# T3  quicklook anchors converted to <Term>
+6ea1928504410e17366b0671bfe2f3a49bc32775
+# T4  admonitions and <details> converted to components
+d0ab5618126f45096ebf61b85481f3e16289ffae
+# T5  partial imports converted to <include>, @@vars@@ inlined
+1e3bff94480076774d9126e854b475818f219b95
