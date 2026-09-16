@@ -18,7 +18,7 @@ In this section, we will explore the Sequencer's operations in detail. The topic
   - [Batching](#batching-and-compression)
   - [Compression](#compression)
   - [Submitting to the Sequencer Inbox contract](#submitting-to-the-sequencer-inbox-contract)
-- [Finality](#finality): A summary of the soft and <a data-quicklook-from="hard-finality">hard finality</a> levels, with a pointer to the full [Finality](/docs/how-arbitrum-works/deep-dives/finality) page (not a Sequencer task).
+- [Finality](#finality): A summary of the soft and <Term id="hard-finality">hard finality</Term> levels, with a pointer to the full [Finality](/docs/how-arbitrum-works/deep-dives/finality) page (not a Sequencer task).
 - [Censorship Timeout](#censorship-timeout): A brief introduction to a special feature that aims to limit the negative effects of prolonged sequencer censorship or unexpected sequencer outages.
 
 By examining these aspects, you will understand the Sequencer’s role within the Arbitrum ecosystem, including how it enhances transaction throughput, reduces latency, and maintains a fair and decentralized network.
@@ -92,7 +92,7 @@ In this section, we will explore the batch posting process in detail, covering t
 - **Compression**: The methods used to compress transaction data, minimizing the amount of data that needs to be posted on the parent chain and thereby reducing costs.
 - **Sending to Sequencer Inbox contract**: The procedure for submitting compressed batches to the Sequencer Inbox contract on the parent chain, ensuring secure and reliable recording of transactions.
 
-This section covers batch posting from the Sequencer's side. For the <a data-quicklook-from="batch-poster">batch poster</a>'s internals, see [The batch poster](/docs/how-arbitrum-works/deep-dives/batchposter). That page traces one batch from the transaction streamer to the parent chain transaction.
+This section covers batch posting from the Sequencer's side. For the <Term id="batch-poster">batch poster</Term>'s internals, see [The batch poster](/docs/how-arbitrum-works/deep-dives/batchposter). That page traces one batch from the transaction streamer to the parent chain transaction.
 
 Understanding batch posting is essential for grasping how Arbitrum achieves scalability and cost-efficiency without compromising security. By delving into these subtopics, you’ll gain insight into the Sequencer’s role in optimizing transaction throughput and minimizing fees, as well as the innovative solutions implemented to address the challenges of parent chain data pricing.
 
@@ -146,7 +146,7 @@ Now that transactions are batched and compressed, they pass to the [batch poster
 
 ## Submitting to the Sequencer Inbox contract
 
-After batching and compressing transactions, the Sequencer posts these batches to the parent chain to ensure security and finality. This process involves the **[batch poster](/docs/how-arbitrum-works/deep-dives/batchposter)**, an Externally Owned Account (EOA) controlled by the Sequencer. The batch poster is responsible for submitting the compressed transaction batches to the Sequencer Inbox contract on the parent chain. Batch posting costs are reimbursed through <a data-quicklook-from="arbos">ArbOS</a>'s parent-chain pricer — see [Parent chain gas pricing](/docs/how-arbitrum-works/deep-dives/gas-and-fees#parent-chain-gas-pricing) and [ArbOS state](/docs/how-arbitrum-works/deep-dives/arbos#arbos-state).
+After batching and compressing transactions, the Sequencer posts these batches to the parent chain to ensure security and finality. This process involves the **[batch poster](/docs/how-arbitrum-works/deep-dives/batchposter)**, an Externally Owned Account (EOA) controlled by the Sequencer. The batch poster is responsible for submitting the compressed transaction batches to the Sequencer Inbox contract on the parent chain. Batch posting costs are reimbursed through <Term id="arbos">ArbOS</Term>'s parent-chain pricer — see [Parent chain gas pricing](/docs/how-arbitrum-works/deep-dives/gas-and-fees#parent-chain-gas-pricing) and [ArbOS state](/docs/how-arbitrum-works/deep-dives/arbos#arbos-state).
 
 The Sequencer uses two primary methods to send batches to the parent chain, depending on whether the chain supports [EIP-4844 (Proto-Danksharding)](https://eips.ethereum.org/EIPS/eip-4844) and the current network conditions. For how the batch poster encodes a batch for each method and self-checks it before sending, see [The batch is wrapped for the parent chain](/docs/how-arbitrum-works/deep-dives/batchposter#5-the-batch-is-wrapped-for-l1-and-self-checked).
 
@@ -194,7 +194,7 @@ Arbitrum offers two levels of finality:
 1. **Soft finality**: The Sequencer’s real-time feed confirms transactions almost instantly, but those confirmations are provisional. They rely on the Sequencer sequencing honestly and staying available.
 2. **Hard finality**: The Sequencer's batches are posted to and finalized on the parent chain, and the batch's transactions inherit the parent chain's security. Final settlement happens when the Rollup protocol confirms the containing [assertion](/docs/how-arbitrum-works/deep-dives/assertions), after the [BoLD](/docs/how-arbitrum-works/bold/gentle-introduction) challenge period.
 
-Posting a batch is not itself final settlement. The transaction data becomes available and inherits the parent chain’s data-layer security, but the resulting child <a data-quicklook-from="chain-state">chain state</a> settles only once an assertion is confirmed.
+Posting a batch is not itself final settlement. The transaction data becomes available and inherits the parent chain’s data-layer security, but the resulting child <Term id="chain-state">chain state</Term> settles only once an assertion is confirmed.
 
 For the full treatment—latency at each stage, the trust model behind each level, force inclusion, AnyTrust data availability, and guidance on which level your application should wait for—see [Finality](/docs/how-arbitrum-works/deep-dives/finality).
 
