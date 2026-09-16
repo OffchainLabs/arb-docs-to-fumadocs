@@ -34,7 +34,9 @@
     "test": "node --test \"scripts/**/*.test.mjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "postinstall": "fumadocs-mdx"
+    "postinstall": "fumadocs-mdx",
+    "tree:map": "node scripts/tree-map-report.mjs",
+    "reconstruct": "node scripts/reconstruct-history.mjs"
   },
   "dependencies": {
     "@ethersproject/address": "5.8.0",
