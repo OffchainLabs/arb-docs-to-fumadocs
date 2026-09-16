@@ -43,6 +43,10 @@ The `fumadocs` branch (`b60b802c`), parented to `master`:
 | E | `0c815ff2` | Editorial delta. Forces the tree to equal the Fumadocs tree exactly. |
 | G | `b60b802c` | `.git-blame-ignore-revs` listing T1–T5. |
 
+Everything after `G` on this branch (these notes, the tooling) is added for sharing and is not part of
+the migration itself. **Commit `E` is the one whose tree is byte-identical to the shipped Fumadocs
+tree** — verify against `E`, not the branch tip.
+
 Build M with plumbing, never through a checkout — round-tripping a blob runs CRLF conversion and
 clean/smudge filters, the OID changes, exact-rename matching fails, and the whole exercise silently
 produces nothing:
@@ -75,7 +79,7 @@ git show --numstat --format= -M100% 8d3af5a6 | cut -f1,2 | sort -u
 | `master` is a true ancestor | ✅ 13,048 commits (13,038 + 10) |
 | Move commit purity | ✅ 591 files, 0 insertions, 0 deletions, all `R100` |
 | Blob identity (10 sampled) | ✅ 10/10 identical OIDs |
-| Tree equality vs shipped Fumadocs tree | ✅ exact OID `900cf046`; tip differs by `.git-blame-ignore-revs` alone |
+| Tree equality vs shipped Fumadocs tree | ✅ commit `E` (`0c815ff2`) has the exact OID `900cf046` |
 | Blame traversal | ✅ 92 commits, oldest 2022-12-07, 11 authors |
 | **SRC authorship, full population** | **72.73%** plain · **75.28%** with ignore-revs · **0%** before |
 
