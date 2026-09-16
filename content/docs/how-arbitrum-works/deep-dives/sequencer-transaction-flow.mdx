@@ -1,10 +1,10 @@
 ---
 title: Sequencer architecture and transaction flow
 description: 'A deep dive into how the Sequencer processes transactions end-to-end: the transaction queue, ordering, block creation timing, and the sequencer feed.'
-user_story: As a chain operator or integration partner, I need to understand how the Sequencer processes transactions end-to-end.
-content_type: 'concept'
 author: Gowtham118
 sme: Jason Wan
+user_story: As a chain operator or integration partner, I need to understand how the Sequencer processes transactions end-to-end.
+content_type: concept
 ---
 
 This deep dive follows a <Term id="transaction">transaction</Term> through a single <Term id="sequencer">Sequencer</Term> instance: how it arrives, how it waits in the transaction queue, how blocks get created, and how the result reaches the rest of the network. It is aimed at chain operators and integration partners who need to reason about queueing, timeouts, and block timing.
@@ -97,9 +97,9 @@ The queue is deliberately a short buffer, not a mempool: with default settings i
 
 ## From block to the rest of the network
 
-As soon as a block is created, the transaction streamer hands the new message to the broadcaster, which publishes it over WebSocket on the <Term id="sequencer-feed">sequencer feed</Term> ([`transaction_streamer.go#L1307`](https://github.com/OffchainLabs/nitro/blob/a618155919315241665356fe60f3cd00d66d5e46/arbnode/transaction_streamer.go#L1307)). Full nodes and [feed relays](/docs/run-a-node/run-feed-relay) consume the feed to give sub-second <Term id="soft-confirmation">soft confirmations</Term>; see [How to read the sequencer feed](/docs/run-a-node/sequencer/read-sequencer-feed).
+As soon as a block is created, the transaction streamer hands the new message to the broadcaster, which publishes it over WebSocket on the sequencer feed ([`transaction_streamer.go#L1307`](https://github.com/OffchainLabs/nitro/blob/a618155919315241665356fe60f3cd00d66d5e46/arbnode/transaction_streamer.go#L1307)). Full nodes and [feed relays](/docs/run-a-node/run-feed-relay) consume the feed to give sub-second <Term id="soft-confirmation">soft confirmations</Term>; see [How to read the sequencer feed](/docs/run-a-node/sequencer/read-sequencer-feed).
 
-Independently, the [batch poster](/docs/how-arbitrum-works/deep-dives/batchposter) compresses the sequenced transactions and posts them to the <Term id="sequencer-inbox">sequencer inbox</Term> on the parent chain, at which point they inherit the parent chain's finality. Validators then re-execute the posted sequence and assert the resulting state. [The Sequencer and censorship resistance](/docs/how-arbitrum-works/deep-dives/sequencer#sequencing-and-broadcasting) covers the feed, batch posting, and the finality trade-offs in detail, and [Assertions](/docs/how-arbitrum-works/deep-dives/assertions) covers validation.
+Independently, the batch poster compresses the sequenced transactions and posts them to the sequencer inbox on the parent chain, at which point they inherit the parent chain's finality. Validators then re-execute the posted sequence and assert the resulting state. [The Sequencer and censorship resistance](/docs/how-arbitrum-works/deep-dives/sequencer#sequencing-and-broadcasting) covers the feed, batch posting, and the finality trade-offs in detail, and [Assertions](/docs/how-arbitrum-works/deep-dives/assertions) covers validation.
 
 ## Tuning guidance for chain operators
 
@@ -117,9 +117,7 @@ This pattern complements rather than replaces queue tuning: `queue-size` and `qu
 
 ## Related resources
 
-- [The Sequencer and censorship resistance](/docs/how-arbitrum-works/deep-dives/sequencer): feed, batch posting, finality, and the <Term id="delayed-inbox">delayed inbox</Term> escape hatch
-- [Finality](/docs/how-arbitrum-works/deep-dives/finality): what soft and <Term id="hard-finality">hard finality</Term> guarantee, and which one to wait for
-- [The batch poster](/docs/how-arbitrum-works/deep-dives/batchposter): what happens after sequencing, from segment building to the parent chain transaction
+- [The Sequencer and censorship resistance](/docs/how-arbitrum-works/deep-dives/sequencer): feed, batch posting, finality, and the delayed inbox escape hatch
 - [Transaction lifecycle](/docs/how-arbitrum-works/deep-dives/transaction-lifecycle): all submission pathways, including bypassing the Sequencer
 - [RPC endpoints and providers](/docs/arbitrum-essentials/reference/node-providers): public endpoint behavior, retries, and fallback patterns
 - [How to set up a high-availability sequencer](/docs/run-a-node/high-availability-sequencer-docs): redundant Sequencers with Redis-based coordination

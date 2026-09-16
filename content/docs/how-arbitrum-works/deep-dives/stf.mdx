@@ -1,247 +1,56 @@
 ---
-title: "How to customize your Arbitrum chain's behavior"
-description: "Learn how to customize your Arbitrum chain's behavior (known as the State Transition Function or STF)"
-content_type: 'how-to'
-author: plasmapower
-sme: jasonwan
+title: 'State Transition Function'
+description: 'Learn the fundamentals of the State Transition Function within Arbitrum Nitro.'
+user_story: As a current or prospective Arbitrum user, I need to learn more about Nitro's design.
+content_type: 'concept'
+author: petevielhaber
+sme: Mehdi
 ---
 
+An Arbitrum node is a deterministic machine: feed it the same ordered inputs, and it will always produce the same outputs. The job of everything before the STF is to agree on exactly which inputs those are and in what order they should be.
 
-<include cwd>content/partials/launch-arbitrum-chain/_arbitrum-chain-customize-caution-banner-partial.mdx</include>
+## How it works
 
-## Introduction
+#### 1. Two doors, one source of truth
 
-Before customizing your Arbitrum chain, it's important to understand what the State Transition Function (STF) is. The STF defines how new blocks are produced from input messages (i.e., transactions).
+Inputs reach a node through two doors. The fast door is the [Sequencer feed](/docs/how-arbitrum-works/deep-dives/sequencer)—a real-time broadcast of newly ordered messages, so nodes feel the chain advance within milliseconds. The slow, trustworthy door is Ethereum itself: the <Term id="sequencer">Sequencer</Term> periodically posts compressed batches to the parent-chain inbox, emitting a `SequencerBatchDelivered` event. When the two disagree, the feed yields—the <Term id="parent-chain">parent chain</Term> is the canonical record (Ethereum for Arbitrum), and a node will <Term id="reorg">reorg</Term> its optimistic feed-derived state to match what was actually settled on Ethereum.
 
-This guide is only necessary for changes that modify the STF.
+#### 2. The envelope (`L1IncomingMessage`)
 
-To customize other node behavior, such as RPC behavior or the sequencer's ordering policy, you can simply
-[build your own node](/docs/run-a-node/nitro/build-nitro-locally) without worrying about the rest of this guide. However, changes that modify the STF require updating the fraud proving system to recognize the new behavior as correct. Otherwise, the fraud prover would side with unmodified nodes, which would win fraud proofs against your modified node.
+Whatever the door, every input lands as one `L1IncomingMessage`: a header plus an opaque L2msg payload. The header is the input surface the STF reads—what kind of message, who put it there, `BlockNumber` and `Timestamp`, the ordering/identity handle, and `L1BaseFee` (parent-chain gas price used). Determinism comes from this: the STF never asks the outside world for the time or the gas price—it only reads what is in the header.
 
-Here's some examples of modifications that affect the STF:
+#### 3. One byte decides the path
 
-- Adding a new EVM opcode or precompile:
-  - This modifies the STF because a node with this change would disagree about the outcome of EVM execution compared to an unmodified Nitro node when the new opcode or precompile is invoked.
-- Rewarding the deployer of a smart contract with a portion of gas spent in the smart contract's execution:
-  - This modifies the STF because a node which has this change applied would disagree about the balance of the deployer after transactions. Such changes would lead to disagreements about block hashes compared to unmodified Nitro nodes.
+The header’s `Kind` routes the message. A handful of kinds are system messages minted by the protocol: `Initialize` (the genesis message that sets the chain ID and base fee), `EthDeposit` (native-token bridging), `SubmitRetryable` (the <Term id="retryable-ticket">retryable-ticket</Term> mechanism behind robust L1→L2 messaging), and `BatchPostingReport` (which lets the STF charge the [batch poster](/docs/how-arbitrum-works/deep-dives/batchposter) for the L1 data it consumes). The workhorse, though, is `L2Message` (kind 3)—the envelope for ordinary user activity.
 
-Here's some examples of modifications that don't affect the STF:
+#### 4. The envelope inside the envelope
 
-- Adding a new RPC method to query an address's balance across multiple blocks:
-  - This doesn't modify the STF because it doesn't change onchain balances or block hashes.
-- Changing the sequencer to order blocks by tip:
-  - The sequencer is trusted to order transactions in Arbitrum Nitro, and it can choose any ordering it wants.
-  - Nodes (and the fraud proofs) will simply accept the new transaction ordering as there is no single ordering they think is correct.
+Open an `L2Message`, and you’ll find a second type byte—the `L2MessageKind`. The type byte can be a single signed transaction (`SignedTx`), an unsigned EOA or contract call (`UnsignedUserTx`, `ContractTx`), or—most importantly—a <Term id="batch">Batch</Term>, which is simply a list of more L2 messages. This nesting is why the type space looks deceptively flat in summaries but is really two layers: an outer parent-chain framing and an inner transaction framing.
 
-### Modification compatibility with Arbitrum Nitro
+#### 5. From batch to messages
 
-Some potential modifications are incompatible with Arbitrum Nitro and would not result in a functioning blockchain. Here are some requirements for the Arbitrum Nitro State Transition Function:
+A batch posted to L1 isn’t a list of transactions; it’s a Brotli-compressed blob, or calldata. The inbox multiplexer inspects the leading header byte, decompresses, and pops out individual `L1IncomingMessage`s one at a time—the same shape the feed delivers. By the time anything reaches the STF, both doors have converged on the identical stream of envelopes.
 
-- The STF must be deterministic. For instance, if you gave an address a random balance using the Go randomness library,
-  - Every node would disagree on the correct amount of balance and the blockchain would not function correctly. However, it is acceptable to take a non-deterministic path to a deterministic output. For instance, if you randomly shuffled a list of addresses, and then gave them each one **ETH**, that would be fine, because no matter how the list of addresses is shuffled the result is the same and all addresses are given one **ETH**.
-- The STF must not reach a new result for old blocks. For instance, if you have been running an Arbitrum Nitro chain for a while, and then you decide to modify the STF to not charge for gas, a new node that syncs the blockchain will reach a different result for historical blocks. It's also important to synchronize between nodes when an upgrade takes effect. A common mechanism for doing this is having an upgrade take effect at a certain timestamp, by which all nodes must be upgraded.
-- The STF must be "pure" and not use external resources. For instance, it must not use the filesystem, make external network calls, or launch processes. That's because the fraud proving system does not (and for the most part, cannot) support these resources. For instance, it's impossible to fraud prove what the result of an external network call is, because the fraud prover smart contracts on L1 are unable to do networking.
-- The STF must not carry state between blocks outside of the "global state". In practice this means persistent state must be stored within block headers or the Ethereum state trie. For instance, [ArbOS](/docs/how-arbitrum-works/deep-dives/arbos) stores all retryables in contract storage under a special ArbOS address.
-- The STF must not modify Ethereum state outside of a transaction. This is important to ensure that replaying old blocks reaches the same result, both for tracing and for validation. The ArbOS internal transaction is useful to modify state at the start of blocks.
-- The STF must reach a result in under a second. This is a rough rule, but for nodes to keep in sync it's highly recommended to keep blocks quick.
-  - It's also important for the fraud proofs that execution reliably finishes in a relatively short amount of time.
-  - A block gas limit of 32 million gas should safely fit within this limit.
-- The STF must not fail or panic. It's important that the STF always produces a new block, even if user input is malformed.
-  - For instance, if the STF receives an invalid transaction as input, it'll still produce an empty block.
+#### 6. The unwrap
 
-## Building the modified node
+Finally, `ParseL2Transactions` turns each envelope into the EVM transactions <Term id="geth">Geth</Term> will run: deposits become `ArbitrumDepositTx`, retryables become their submission transaction, batches recurse, and bookkeeping kinds like `RollupEvent` are acknowledged and skipped. What flows out is an ordered list of transactions—and that ordered list, derived deterministically from headers no node can fabricate, is the true input to Arbitrum’s <Term id="state-transition-function">State Transition Function</Term>.
 
-To modify the State Transition Function, you'll need to build a modified Arbitrum Nitro node Docker image. This guide covers how to build the node and enable fraud proofs by building a new replay binary.
+## Stylus-specific transaction processing
 
-### Step 1. Download the Nitro source code
+A modified version of Geth that recognizes and processes <Term id="stylus">Stylus</Term> transactions, ensuring proper inclusion in state transitions.
 
-Clone the Nitro repository before you begin:
+## Execution in a WASM runtime
 
-```shell
-git clone --branch <Var name="nitroVersionTag" /> https://github.com/OffchainLabs/nitro.git
-cd nitro
-git submodule update --init --recursive --force
-```
+Stylus transactions execute in [<Term id="arbos">ArbOS</Term>](/docs/how-arbitrum-works/deep-dives/arbos)'s <Term id="wasm">WASM</Term> runtime instead of the EVM, enabling faster execution and more efficient computation.
 
-### Step 2. Apply modifications
+## Stylus gas accounting and pricing
 
-Next, make your changes to the State Transition Function. For example, you could [add a custom precompile](./precompiles.mdx).
+Unlike standard EVM transactions, Stylus transactions introduce new gas pricing models that account for factors such as opcode pricing, host I/O operations, and <Term id="ink">Ink</Term> usage costs.
 
-After this step, you should visit [Customize ArbOS version](/docs/launch-arbitrum-chain/configuration/core/customize-arbos) to see if your changes need to upgrade the ArbOS version. If so, please continue to
-follow that document to add an ArbOS upgrade logic to your code.
+## Interoperability with the EVM
 
-### Step 3. Run the node
+Stylus contracts can interact with Solidity contracts, enabling hybrid applications that leverage EVM and WASM execution environments.
 
-To build the Arbitrum Nitro node image, you'll first need to install Docker.
-You can confirm if it's already setup by running `docker version` in a terminal.
-If not, try following [Docker's getting started guide](https://www.docker.com/get-started/), or if you're on Linux,
-install Docker from your distribution's package manager and start the Docker service.
+These Stylus-related changes aim to maintain compatibility with Ethereum’s execution model while introducing a more efficient, flexible, and scalable alternative for smart contract development.
 
-Once you have Docker installed, you can simply run `docker build . --tag custom-nitro-node` in the `nitro` folder to build your custom node.
-
-<VanillaAdmonition type="note">
-
-A chain running a customized State Transition Function will produce blocks that don't match the verified Nitro WASM module root on the parent chain. Coordinate with Offchain Labs before operating a customized STF against a production chain, as the validator configuration required is not covered in this guide.
-
-</VanillaAdmonition>
-
-You have two ways of running your node.
-
-#### 1. Using the docker-compose file
-
-This is the recommended way if you're running your Arbitrum chain locally through the provided [docker-compose file](https://github.com/OffchainLabs/orbit-setup-script/blob/main/docker-compose.yaml#L39). In `docker-compose.yml`, modify the Docker image used for the Nitro container:
-
-```
-...
-nitro:
-  image: custom-nitro-node
-  ports:
-...
-```
-
-And run `docker compose up` to run all of your containers.
-
-#### 2. Use `docker run` to run your Nitro node only
-
-This method will only run the customized Nitro node (i.e., it will not run Blockscout, or the DA server if you're using an AnyTrust chain). Use the following command:
-
-```shell
-docker run --rm -it -v /path/to/your/node/dir:/home/user/.arbitrum -p 0.0.0.0:8449:8449 custom-nitro-node --conf.file /home/user/.arbitrum/nodeConfig.json
-```
-
-<VanillaAdmonition type="info">
-
-The instructions provided in [How to run a full node](/docs/run-a-node/run-full-node) **will not** work with your Arbitrum chain node. See [Optional parameters (Arbitrum chain)](/docs/run-a-node/run-full-node#optional-parameters) for Arbitrum chain-specific CLI flags.
-
-</VanillaAdmonition>
-
-Once your node is running, you can try out your modifications to the State Transition Function and confirm they work as expected.
-
-### Step 4. Enable fraud proofs
-
-To enable fraud proofs, you'll need to build the "replay binary", which defines the State Transition Function for the fraud prover. The replay binary (sometimes called the machine) re-executes the State Transition Function against input messages to determine the correct output block.
-
-It has three forms:
-
-- The `replay.wasm` binary is the Go replay binary compiled to WASM. It's used by the JIT validator to verify blocks against the fraud prover.
-- The `machine.v2.wavm.br` binary is a compressed binary containing the Go replay binary and all its dependencies, compiled to WASM, then translated to the Arbitrum fraud proving variant <Term id="wavm">WAVM</Term>.
-  - It's used by Arbitrator when actually entering a <Term id="challenge">challenge</Term> and performing the fraud proofs,
-    and has identical behavior to `replay.wasm`.
-- The <Term id="wasm-module-root">WASM module root</Term> (stored in `module-root.txt`) is a 32 byte hash usually expressed in hexadecimal which is a merkelization of `machine.v2.wavm.br`.
-  - The replay binary is much too large to post onchain, so this hash is set in the L1 Rollup contract to determine the correct replay binary during fraud proofs.
-
-To run a validator node with fraud proofs enabled, the validator node's Docker image will need to contain all three of these versions of the replay binary.
-
-#### 4.1 Build a dev image
-
-The simplest way to build a Docker image with the new replay binary is to build a dev image.
-These images contain a freshly built replay binary, but note that the replay binary and corresponding WASM module root will generally change when the code is updated,
-even if the State Transition Function has equivalent behavior.
-It's important that the validator's WASM module root matches the onchain WASM module root, which is why this approach is harder to maintain.
-Over the longer term, you'll want to maintain a separate build of the replay binary that matches the one currently onchain, usable by any node image.
-
-To build the dev node image and get the WASM module root, run:
-
-```shell
-docker build . --target nitro-node-dev --tag custom-nitro-node-dev
-docker run --rm --entrypoint cat custom-nitro-node-dev target/machines/latest/module-root.txt
-```
-
-Once you have the WASM module root, you can put it onchain by calling `setWasmModuleRoot(newWasmModuleRoot)` through the upgradeExecutor contract's method `executeCall()` as the owner. To call this method, you need to set `target` as your Rollup contract address. Ensure that `targetCallData` starts with `0x89384960` (this is the signature of `setWasmModuleRoot(byte32)`), and that it's followed by your WASM module root.
-The `upgradeExecutor` contract address and Rollup contract address can be found in the chain deployment info JSON.
-You can confirm that the WASM module root was updated by calling `wasmModuleRoot()` on the Rollup contract.
-
-Once you have set the new WASM module root onchain, the validator will recognize blocks produced by your customized STF. You can now run your node with fraud proof verification enabled.
-
-You have two ways of running your node.
-
-#### 1. Using the docker-compose file
-
-As mentioned before, this is the recommended way if you're running your Arbitrum chain locally through the provided [docker-compose file](https://github.com/OffchainLabs/orbit-setup-script/blob/main/docker-compose.yaml#L39). In `docker-compose.yml`, modify the Docker image used for the Nitro container. Notice that we'll now use the `custom-nitro-node-dev` you just created:
-
-```
-...
-nitro:
-  image: custom-nitro-node-dev
-  ports:
-...
-```
-
-And run `docker compose up` to run all of your containers.
-
-#### 2. Use `docker run` to run your Nitro node only
-
-This method will only run the customized Nitro node (i.e., it will not run Blockscout, or the DA server if you're using an AnyTrust chain). Use the following command:
-
-```shell
-docker run --rm -it -v /path/to/your/node/dir:/home/user/.arbitrum -p 0.0.0.0:8449:8449 custom-nitro-node-dev --conf.file /home/user/.arbitrum/nodeConfig.json
-```
-
-#### 4.2 Preserving the replay binary
-
-The primary issue with simply using a nitro-node-dev build is that, whenever the code changes at all, the replay binary will also change.
-
-If the node is missing the replay binary corresponding to the onchain WASM module root, it will be unable to act as a validator.
-Therefore, when releasing new node Docker images it's important to include the currently onchain WASM module root.
-
-To do that, you'll need to first extract the replay binary from the `nitro-node-dev` Docker image built earlier:
-
-```shell
-docker run --rm --name replay-binary-extractor --entrypoint sleep custom-nitro-node-dev infinity
-docker cp replay-binary-extractor:/home/user/target/machines/latest extracted-replay-binary
-docker stop replay-binary-extractor
-cat extracted-replay-binary/module-root.txt
-mv extracted-replay-binary "target/machines/$(cat extracted-replay-binary/module-root.txt)"
-```
-
-These commands will output the new WASM module root, and create the directory `target/machines/<wasm module root>`.
-There you'll find the three versions of the replay binary mentioned earlier:
-`replay.wasm`, `machine.v2.wavm.br`, and `module-root.txt`, along with some other optional files.
-Now that you've extracted the replay binary, there are two ways to add it to future Docker images,
-including non-dev image builds. You can either keep it locally and copy it in, or host it on the web.
-
-##### Option 1: Store the extracted replay binary locally
-
-Now that we've extracted the replay binary, we can modify the Docker file to copy it into new Docker builds.
-Edit the `Dockerfile` file in the root of the nitro folder, and after all the `RUN ./download-machine.sh ...` lines, add:
-
-```dockerfile
-COPY target/machines/<wasm module root> <wasm module root>
-RUN ln -sfT <wasm module root> latest
-```
-
-Replace each `<wasm module root>` with the WASM module root you got earlier.
-
-##### Option 2: Host the replay binary on the web
-
-To support building the Docker image on other computers without this local machine directory,
-you'll need to either commit the machine to git, or preferably, host the replay binary on the web.
-
-To host the replay binary on the web, you'll need to host the `replay.wasm` and `machine.v2.wavm.br` files somewhere.
-One good option is GitHub releases, but any hosting service works.
-
-Once you have those two files hosted, instead of the `COPY` and `RUN` command mentioned in option 1,
-you'll need to add these new lines to the `Dockerfile` file in the root of the nitro folder,
-after all the `RUN ./download-machine.sh ...` lines:
-
-```dockerfile
-RUN wasm_module_root="<wasm module root>" && \
-    mkdir "$wasm_module_root" && \
-    wget <url of replay.wasm> -O "$wasm_module_root/replay.wasm" && \
-    wget <url of machine.v2.wavm.br> -O "$wasm_module_root/machine.v2.wavm.br" && \
-    echo "$wasm_module_root" > "$wasm_module_root/module-root.txt" && \
-    ln -sfT "$wasm_module_root" latest
-```
-
-Replace the `<wasm module root>` with the WASM module root you got earlier,
-the `<url of replay.wasm>` with the direct link to the `replay.wasm` file (it must be a direct link to the file and not just a download site),
-and the `<url of machine.v2.wavm.br>` with the direct link to the `machine.v2.wavm.br` file.
-
-### Step 5. Verify the fraud proofs
-
-In theory, fraud proofs should now be working with your newly built Docker images.
-Make some transactions on your new blockchain, test out your modifications to the State Transition Function,
-wait for a batch to be posted, and you should be seeing "validation succeeded" log lines!
-
-If you see "Error during validation", then the replay binary is likely not up-to-date with your modifications to the State Transition Function.
-Ensure that the replay binary is freshly built, not missing any modifications, and that the WASM module root set in the Rollup contract matches your replay binary.
+The following sections cover [STF inputs](/docs/how-arbitrum-works/reference/stf-inputs), node processing, and implementation rules, highlighting [differences between Ethereum and Arbitrum](/docs/arbitrum-essentials/arbitrum-vs-ethereum/comparison-overview), and Stylus execution environments. [Stylus-specific execution tasks handled within ArbOS](/docs/how-arbitrum-works/deep-dives/arbos) will be covered separately, focusing on host I/O operations, caching, and WASM memory management.
